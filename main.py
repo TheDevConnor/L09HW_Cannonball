@@ -5,48 +5,57 @@ import pandas as pd
 import streamlit as st
 import random
 
+class Print_Iface:
+    """Handles all plot/chart rendering for the cannonball simulation."""
 
-## Represent a cannonball, tracking its position and velocity.
-#
+    def main_print(self, xs, ys, title="Cannonball Trajectory"):
+        """Build and display an Altair line chart from trajectory data."""
+        if not xs:
+            st.warning("No trajectory points were generated.")
+            return
+
+        df = pd.DataFrame({"x": xs, "y": ys})
+
+        chart = (
+            alt.Chart(df)
+            .mark_line()
+            .encode(
+                x=alt.X("x:Q", scale=alt.Scale(domain=[0, max(xs) * 1.1 + 10]), title="Distance (m)"),
+                y=alt.Y("y:Q", scale=alt.Scale(domain=[0, max(ys) * 1.2 + 5]), title="Height (m)"),
+            )
+            .properties(width=700, height=400, title=title)
+        )
+        st.altair_chart(chart, use_container_width=True)
+
 class Cannonball:
-    ## Create a new cannonball at the provided x position.
-    #  @param x the x position of the ball
-    #
+    """Represent a cannonball, tracking its position and velocity."""
+
     def __init__(self, x):
         self._x = x
         self._y = 0
         self._vx = 0
         self._vy = 0
+        # Composition: Cannonball HAS-A Print_Iface
+        self._printer = Print_Iface()
 
-    ## Move the cannon ball, using its current velocities.
-    #  @param sec the amount of time that has elapsed.
-    #
     def move(self, sec, grav):
+        """Move the cannon ball using its current velocities."""
         dx = self._vx * sec
         dy = self._vy * sec
-
         self._vy = self._vy - grav * sec
-
         self._x = self._x + dx
         self._y = self._y + dy
 
-    ## Get the current x position of the ball.
-    #  @return the x position of the ball
-    #
     def getX(self):
+        """Get the current x position."""
         return self._x
 
-    ## Get the current y position of the ball.
-    #  @return the y position of the ball
-    #
     def getY(self):
+        """Get the current y position."""
         return self._y
 
-    ## Shoot the canon ball.
-    #  @param angle the angle of the cannon (radians)
-    #  @param velocity the initial velocity of the ball
-    #
     def shoot(self, angle, velocity, user_grav, step=0.1):
+        """Shoot the cannon ball and return trajectory data."""
         self._vx = velocity * cos(angle)
         self._vy = velocity * sin(angle)
         self.move(step, user_grav)
@@ -59,7 +68,35 @@ class Cannonball:
             ys.append(self.getY())
             self.move(step, user_grav)
 
+        # Delegate plotting to the composed Print_Iface
+        self._printer.main_print(xs, ys, title="Cannonball Trajectory")
         return xs, ys
+
+class Crazyball(Cannonball):
+    """
+    Inherits from Cannonball.
+    Overrides move() to add randomness to the trajectory
+    when the ball is within the first 400 m of travel.
+    """
+
+    def __init__(self, x):
+        super().__init__(x)
+        self.x = x  # exposed attribute per UML
+
+    def move(self, sec, grav):
+        """Move with random jitter applied when x < 400."""
+        # Call parent move first
+        super().move(sec, grav)
+
+        # Add randomness when within first 400 m
+        self.rand_q = random.randrange(0, 10)
+        if self.getX() < 400:
+            # Randomly perturb position
+            self._x += random.uniform(-self.rand_q, self.rand_q)
+            self._y += random.uniform(-self.rand_q / 2, self.rand_q / 2)
+            # Keep y non-negative
+            if self._y < 0:
+                self._y = 0
 
 def run_app():
     st.title("Cannonball Trajectory")
@@ -69,35 +106,27 @@ def run_app():
     )
     velocity = st.selectbox("Initial velocity", options=[15, 25, 40], index=1)
 
-    gravity_options = {"Earth": 9.81}
+    gravity_options = {
+        "Earth": 9.81,
+        "Moon": 1.62,   # Moon surface gravity ≈ 1.62 m/s²
+    }
     gravity_name = st.selectbox("Gravity", options=list(gravity_options.keys()), index=0)
     gravity = gravity_options[gravity_name]
-    step = .1
+    step = 0.1
 
     col1, col2 = st.columns(2)
     simulate = col1.button("Simulate")
+    crazy_simulate = col2.button("Crazy Simulate")
 
     if simulate:
         angle_rad = radians(angle_deg)
         ball = Cannonball(0)
-        xs, ys = ball.shoot(angle_rad, velocity, gravity, step)
+        ball.shoot(angle_rad, velocity, gravity, step)
 
-        if not xs:
-            st.warning("No trajectory points were generated.")
-            return
-
-        df = pd.DataFrame({"x": xs, "y": ys})
-
-        chart = (
-            alt.Chart(df)
-            .mark_line()
-            .encode(
-                x=alt.X("x:Q", scale=alt.Scale(domain=[0, 200]), title="Distance (m)"),
-                y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 100]), title="Height (m)")
-            )
-            .properties(width=700, height=400)
-        )
-        st.altair_chart(chart, use_container_width=True)
+    if crazy_simulate:
+        angle_rad = radians(angle_deg)
+        crazy_ball = Crazyball(0)
+        crazy_ball.shoot(angle_rad, velocity, gravity, step)
 
 
 if __name__ == "__main__":
